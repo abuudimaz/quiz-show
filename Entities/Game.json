@@ -1,0 +1,54 @@
+{
+  "name": "Game",
+  "type": "object",
+  "properties": {
+    "quiz_id": {
+      "type": "string",
+      "description": "ID quiz yang digunakan"
+    },
+    "quiz_name": {
+      "type": "string",
+      "description": "Nama quiz untuk referensi"
+    },
+    "teams": {
+      "type": "array",
+      "description": "Daftar tim dan skor",
+      "items": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "score": {
+            "type": "number",
+            "default": 0
+          },
+          "color": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "answered_questions": {
+      "type": "array",
+      "description": "Array of category-question indices that have been answered",
+      "items": {
+        "type": "string"
+      },
+      "default": []
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "setup",
+        "playing",
+        "finished"
+      ],
+      "default": "setup"
+    }
+  },
+  "required": [
+    "quiz_id",
+    "teams"
+  ]
+}
