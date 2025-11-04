@@ -1,0 +1,69 @@
+{
+  "name": "Quiz",
+  "type": "object",
+  "properties": {
+    "name": {
+      "type": "string",
+      "description": "Nama quiz"
+    },
+    "subject": {
+      "type": "string",
+      "description": "Mata pelajaran"
+    },
+    "grade": {
+      "type": "string",
+      "description": "Kelas/tingkat"
+    },
+    "topic": {
+      "type": "string",
+      "description": "Materi/topik pembelajaran"
+    },
+    "categories": {
+      "type": "array",
+      "description": "5 kategori quiz",
+      "items": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "questions": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "points": {
+                  "type": "number"
+                },
+                "question": {
+                  "type": "string"
+                },
+                "options": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  },
+                  "description": "4 pilihan jawaban (A, B, C, D)"
+                },
+                "correct_answer": {
+                  "type": "string",
+                  "description": "Pilihan yang benar (A/B/C/D)"
+                },
+                "explanation": {
+                  "type": "string",
+                  "description": "Penjelasan singkat jawaban"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "required": [
+    "name",
+    "subject",
+    "grade",
+    "topic"
+  ]
+}
