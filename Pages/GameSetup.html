@@ -1,0 +1,192 @@
+import React, { useState } from "react";
+import { base44 } from "@/api/base44Client";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { useNavigate } from "react-router-dom";
+import { createPageUrl } from "@/utils";
+import { ArrowLeft, Plus, Trash2, Play, Users } from "lucide-react";
+
+const TEAM_COLORS = [
+  "#3B82F6", // blue
+  "#EF4444", // red
+  "#10B981", // green
+  "#F59E0B", // amber
+  "#8B5CF6", // purple
+  "#EC4899", // pink
+];
+
+export default function GameSetup() {
+  const navigate = useNavigate();
+  const queryClient = useQueryClient();
+  const urlParams = new URLSearchParams(window.location.search);
+  const quizId = urlParams.get('quiz_id');
+
+  const [teams, setTeams] = useState([
+    { name: "", score: 0, color: TEAM_COLORS[0] },
+    { name: "", score: 0, color: TEAM_COLORS[1] },
+  ]);
+
+  const { data: quiz } = useQuery({
+    queryKey: ['quiz', quizId],
+    queryFn: async () => {
+      const quizzes = await base44.entities.Quiz.list();
+      return quizzes.find(q => q.id === quizId);
+    },
+    enabled: !!quizId,
+  });
+
+  const createGameMutation = useMutation({
+    mutationFn: async (gameData) => {
+      return await base44.entities.Game.create(gameData);
+    },
+    onSuccess: (game) => {
+      queryClient.invalidateQueries({ queryKey: ['games'] });
+      navigate(`${createPageUrl("GameBoard")}?game_id=${game.id}`);
+    },
+  });
+
+  const addTeam = () => {
+    if (teams.length < 6) {
+      setTeams([...teams, { 
+        name: "", 
+        score: 0, 
+        color: TEAM_COLORS[teams.length] 
+      }]);
+    }
+  };
+
+  const removeTeam = (index) => {
+    if (teams.length > 2) {
+      setTeams(teams.filter((_, i) => i !== index));
+    }
+  };
+
+  const updateTeamName = (index, name) => {
+    const newTeams = [...teams];
+    newTeams[index].name = name;
+    setTeams(newTeams);
+  };
+
+  const startGame = async () => {
+    const filledTeams = teams.filter(t => t.name.trim() !== "");
+    
+    if (filledTeams.length < 2) {
+      alert("Minimal 2 tim harus diisi!");
+      return;
+    }
+
+    const gameData = {
+      quiz_id: quizId,
+      quiz_name: quiz.name,
+      teams: filledTeams,
+      answered_questions: [],
+      status: "playing"
+    };
+
+    await createGameMutation.mutateAsync(gameData);
+  };
+
+  if (!quiz) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-slate-900 via-blue-900 to-slate-900 flex items-center justify-center">
+        <div className="text-white text-xl">Loading...</div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-blue-900 to-slate-900 p-6">
+      <div className="max-w-4xl mx-auto">
+        <Button
+          variant="ghost"
+          onClick={() => navigate(createPageUrl("Home"))}
+          className="text-slate-300 hover:text-white mb-6"
+        >
+          <ArrowLeft className="w-4 h-4 mr-2" />
+          Kembali
+        </Button>
+
+        <Card className="bg-slate-800/50 border-slate-700 backdrop-blur shadow-2xl">
+          <CardHeader className="border-b border-slate-700">
+            <div className="flex items-center justify-between">
+              <div>
+                <CardTitle className="text-2xl text-white mb-2">
+                  Setup Tim
+                </CardTitle>
+                <p className="text-slate-400">
+                  {quiz.name} • {quiz.subject} • Kelas {quiz.grade}
+                </p>
+              </div>
+              <div className="p-3 bg-blue-500/20 rounded-lg">
+                <Users className="w-8 h-8 text-blue-400" />
+              </div>
+            </div>
+          </CardHeader>
+
+          <CardContent className="p-6 space-y-6">
+            <div className="space-y-4">
+              {teams.map((team, index) => (
+                <div key={index} className="flex items-center gap-3">
+                  <div
+                    className="w-12 h-12 rounded-lg flex items-center justify-center font-bold text-white text-lg"
+                    style={{ backgroundColor: team.color }}
+                  >
+                    {index + 1}
+                  </div>
+                  <div className="flex-1">
+                    <Input
+                      placeholder={`Nama Tim ${index + 1}`}
+                      value={team.name}
+                      onChange={(e) => updateTeamName(index, e.target.value)}
+                      className="bg-slate-900/50 border-slate-700 text-white placeholder:text-slate-500"
+                    />
+                  </div>
+                  {teams.length > 2 && (
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={() => removeTeam(index)}
+                      className="text-red-400 hover:text-red-300 hover:bg-red-900/20"
+                    >
+                      <Trash2 className="w-5 h-5" />
+                    </Button>
+                  )}
+                </div>
+              ))}
+            </div>
+
+            {teams.length < 6 && (
+              <Button
+                variant="outline"
+                onClick={addTeam}
+                className="w-full border-slate-700 text-slate-300 hover:text-white hover:bg-slate-700"
+              >
+                <Plus className="w-4 h-4 mr-2" />
+                Tambah Tim (max 6 tim)
+              </Button>
+            )}
+
+            <div className="bg-yellow-900/30 border border-yellow-700/50 rounded-lg p-4">
+              <p className="text-sm text-yellow-200">
+                💡 <strong>Tips:</strong> Masukkan nama-nama tim yang akan berkompetisi. 
+                Minimal 2 tim, maksimal 6 tim.
+              </p>
+            </div>
+
+            <Button
+              onClick={startGame}
+              disabled={createGameMutation.isPending}
+              className="w-full bg-yellow-500 hover:bg-yellow-600 text-slate-900 font-bold py-6 text-lg rounded-xl shadow-lg shadow-yellow-500/30 hover:shadow-yellow-500/50 transition-all"
+            >
+              <Play className="w-5 h-5 mr-2" />
+              Mulai Game!
+            </Button>
+          </CardContent>
+        </Card>
+      </div>
+    </div>
+  );
+}
