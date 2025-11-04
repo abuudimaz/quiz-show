@@ -1,0 +1,300 @@
+import React, { useState } from "react";
+import { base44 } from "@/api/base44Client";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { useNavigate } from "react-router-dom";
+import { createPageUrl } from "@/utils";
+import { ArrowLeft, Sparkles, Wand2, Loader2 } from "lucide-react";
+
+export default function CreateQuiz() {
+  const navigate = useNavigate();
+  const queryClient = useQueryClient();
+  const [formData, setFormData] = useState({
+    name: "",
+    subject: "",
+    grade: "",
+    topic: ""
+  });
+  const [isGenerating, setIsGenerating] = useState(false);
+
+  const createQuizMutation = useMutation({
+    mutationFn: async (quizData) => {
+      return await base44.entities.Quiz.create(quizData);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['quizzes'] });
+      navigate(createPageUrl("Home"));
+    },
+  });
+
+  const handleGenerate = async () => {
+    if (!formData.name || !formData.subject || !formData.grade || !formData.topic) {
+      alert("Mohon lengkapi semua field!");
+      return;
+    }
+
+    setIsGenerating(true);
+
+    try {
+      const prompt = `Buatkan TEPAT 5 kategori quiz Jeopardy dengan soal PILIHAN GANDA untuk:
+- Mata Pelajaran: ${formData.subject}
+- Kelas: ${formData.grade}
+- Topik/Materi: ${formData.topic}
+
+ATURAN KETAT - HARUS DIIKUTI:
+1. WAJIB 5 KATEGORI (tidak boleh kurang atau lebih)
+2. SETIAP kategori WAJIB 5 soal (points: 100, 200, 300, 400, 500)
+3. SETIAP soal WAJIB format PILIHAN GANDA dengan TEPAT 4 OPSI (A, B, C, D)
+4. Jawaban benar ditandai dengan huruf (A/B/C/D)
+5. Setiap soal harus ada penjelasan
+
+Format JSON yang WAJIB:
+{
+  "categories": [
+    {
+      "name": "Kategori 1",
+      "questions": [
+        {
+          "points": 100,
+          "question": "Pertanyaan mudah?",
+          "options": ["Opsi A", "Opsi B", "Opsi C", "Opsi D"],
+          "correct_answer": "A",
+          "explanation": "Penjelasan kenapa A benar"
+        },
+        {
+          "points": 200,
+          "question": "Pertanyaan sedang?",
+          "options": ["Opsi A", "Opsi B", "Opsi C", "Opsi D"],
+          "correct_answer": "B",
+          "explanation": "Penjelasan"
+        },
+        {
+          "points": 300,
+          "question": "Pertanyaan agak sulit?",
+          "options": ["Opsi A", "Opsi B", "Opsi C", "Opsi D"],
+          "correct_answer": "C",
+          "explanation": "Penjelasan"
+        },
+        {
+          "points": 400,
+          "question": "Pertanyaan sulit?",
+          "options": ["Opsi A", "Opsi B", "Opsi C", "Opsi D"],
+          "correct_answer": "D",
+          "explanation": "Penjelasan"
+        },
+        {
+          "points": 500,
+          "question": "Pertanyaan sangat sulit?",
+          "options": ["Opsi A", "Opsi B", "Opsi C", "Opsi D"],
+          "correct_answer": "A",
+          "explanation": "Penjelasan"
+        }
+      ]
+    }
+  ]
+}
+
+PENTING: 
+- Kategori harus beragam dan menarik
+- Tingkat kesulitan harus sesuai poin (100=mudah, 500=sulit)
+- Pilihan jawaban harus masuk akal semua
+- WAJIB 5 kategori x 5 soal = 25 soal total
+- Soal sesuai level kelas ${formData.grade}`;
+
+      const result = await base44.integrations.Core.InvokeLLM({
+        prompt: prompt,
+        response_json_schema: {
+          type: "object",
+          properties: {
+            categories: {
+              type: "array",
+              minItems: 5,
+              maxItems: 5,
+              items: {
+                type: "object",
+                properties: {
+                  name: { type: "string" },
+                  questions: {
+                    type: "array",
+                    minItems: 5,
+                    maxItems: 5,
+                    items: {
+                      type: "object",
+                      properties: {
+                        points: { type: "number" },
+                        question: { type: "string" },
+                        options: {
+                          type: "array",
+                          minItems: 4,
+                          maxItems: 4,
+                          items: { type: "string" }
+                        },
+                        correct_answer: { type: "string" },
+                        explanation: { type: "string" }
+                      },
+                      required: ["points", "question", "options", "correct_answer", "explanation"]
+                    }
+                  }
+                },
+                required: ["name", "questions"]
+              }
+            }
+          },
+          required: ["categories"]
+        }
+      });
+
+      // Validasi hasil
+      if (!result.categories || result.categories.length !== 5) {
+        throw new Error("AI tidak menghasilkan 5 kategori");
+      }
+
+      for (let i = 0; i < result.categories.length; i++) {
+        const cat = result.categories[i];
+        if (!cat.questions || cat.questions.length !== 5) {
+          throw new Error(`Kategori ${i+1} tidak punya 5 soal`);
+        }
+      }
+
+      const quizData = {
+        ...formData,
+        categories: result.categories
+      };
+
+      await createQuizMutation.mutateAsync(quizData);
+    } catch (error) {
+      console.error("Error generating quiz:", error);
+      alert("Gagal membuat quiz: " + error.message + ". Silakan coba lagi.");
+      setIsGenerating(false);
+      return;
+    }
+
+    setIsGenerating(false);
+  };
+
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-blue-900 to-slate-900 p-6">
+      <div className="max-w-3xl mx-auto">
+        <Button
+          variant="ghost"
+          onClick={() => navigate(createPageUrl("Home"))}
+          className="text-slate-300 hover:text-white mb-6"
+        >
+          <ArrowLeft className="w-4 h-4 mr-2" />
+          Kembali
+        </Button>
+
+        <Card className="bg-slate-800/50 border-slate-700 backdrop-blur shadow-2xl">
+          <CardHeader className="border-b border-slate-700">
+            <CardTitle className="flex items-center gap-3 text-2xl text-white">
+              <div className="p-2 bg-yellow-500/20 rounded-lg">
+                <Wand2 className="w-6 h-6 text-yellow-400" />
+              </div>
+              Buat Quiz dengan AI Generator
+            </CardTitle>
+            <p className="text-slate-400 mt-2">
+              Masukkan detail quiz, AI akan otomatis membuatkan kategori dan soal pilihan ganda
+            </p>
+          </CardHeader>
+
+          <CardContent className="p-6 space-y-6">
+            <div className="space-y-2">
+              <Label htmlFor="name" className="text-white">
+                Nama Quiz
+              </Label>
+              <Input
+                id="name"
+                placeholder="contoh: Quiz Matematika Semester 1"
+                value={formData.name}
+                onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                className="bg-slate-900/50 border-slate-700 text-white placeholder:text-slate-500"
+              />
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <div className="space-y-2">
+                <Label htmlFor="subject" className="text-white">
+                  Mata Pelajaran
+                </Label>
+                <Input
+                  id="subject"
+                  placeholder="contoh: Matematika"
+                  value={formData.subject}
+                  onChange={(e) => setFormData({ ...formData, subject: e.target.value })}
+                  className="bg-slate-900/50 border-slate-700 text-white placeholder:text-slate-500"
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="grade" className="text-white">
+                  Kelas
+                </Label>
+                <Input
+                  id="grade"
+                  placeholder="contoh: 7 SMP"
+                  value={formData.grade}
+                  onChange={(e) => setFormData({ ...formData, grade: e.target.value })}
+                  className="bg-slate-900/50 border-slate-700 text-white placeholder:text-slate-500"
+                />
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="topic" className="text-white">
+                Materi/Topik
+              </Label>
+              <Textarea
+                id="topic"
+                placeholder="contoh: Operasi Bilangan Bulat, Pecahan, dan Aljabar Dasar"
+                value={formData.topic}
+                onChange={(e) => setFormData({ ...formData, topic: e.target.value })}
+                className="bg-slate-900/50 border-slate-700 text-white placeholder:text-slate-500 h-24"
+              />
+              <p className="text-xs text-slate-400">
+                Jelaskan topik/materi yang ingin dijadikan soal
+              </p>
+            </div>
+
+            <div className="bg-blue-900/30 border border-blue-700/50 rounded-lg p-4">
+              <div className="flex items-start gap-3">
+                <Sparkles className="w-5 h-5 text-blue-400 mt-0.5" />
+                <div className="text-sm text-blue-200">
+                  <p className="font-semibold mb-1">AI akan membuat:</p>
+                  <ul className="list-disc list-inside space-y-1 text-slate-300">
+                    <li><strong>TEPAT 5 kategori</strong> yang relevan</li>
+                    <li><strong>25 soal pilihan ganda</strong> (5 soal per kategori)</li>
+                    <li>Setiap soal punya <strong>4 pilihan jawaban (A-D)</strong></li>
+                    <li>Tingkat kesulitan dari 100-500 poin</li>
+                    <li>Penjelasan untuk setiap jawaban</li>
+                  </ul>
+                </div>
+              </div>
+            </div>
+
+            <Button
+              onClick={handleGenerate}
+              disabled={isGenerating || !formData.name || !formData.subject || !formData.grade || !formData.topic}
+              className="w-full bg-yellow-500 hover:bg-yellow-600 text-slate-900 font-bold py-6 text-lg rounded-xl shadow-lg shadow-yellow-500/30 hover:shadow-yellow-500/50 transition-all"
+            >
+              {isGenerating ? (
+                <>
+                  <Loader2 className="w-5 h-5 mr-2 animate-spin" />
+                  Generating... (sekitar 20-30 detik)
+                </>
+              ) : (
+                <>
+                  <Sparkles className="w-5 h-5 mr-2" />
+                  Generate Quiz dengan AI
+                </>
+              )}
+            </Button>
+          </CardContent>
+        </Card>
+      </div>
+    </div>
+  );
+}
