@@ -1,0 +1,193 @@
+import React, { useState } from "react";
+import { base44 } from "@/api/base44Client";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useNavigate } from "react-router-dom";
+import { createPageUrl } from "@/utils";
+import JeopardyBoard from "../components/game/JeopardyBoard";
+import QuestionModal from "../components/game/QuestionModal";
+import Scoreboard from "../components/game/Scoreboard";
+import GameControls from "../components/game/GameControls";
+
+export default function GameBoard() {
+  const navigate = useNavigate();
+  const queryClient = useQueryClient();
+  const urlParams = new URLSearchParams(window.location.search);
+  const gameId = urlParams.get('game_id');
+
+  const [selectedQuestion, setSelectedQuestion] = useState(null);
+  const [showAnswer, setShowAnswer] = useState(false);
+
+  const { data: game, isLoading } = useQuery({
+    queryKey: ['game', gameId],
+    queryFn: async () => {
+      const games = await base44.entities.Game.list();
+      return games.find(g => g.id === gameId);
+    },
+    enabled: !!gameId,
+    refetchInterval: 1000,
+  });
+
+  const { data: quiz } = useQuery({
+    queryKey: ['quiz', game?.quiz_id],
+    queryFn: async () => {
+      const quizzes = await base44.entities.Quiz.list();
+      return quizzes.find(q => q.id === game.quiz_id);
+    },
+    enabled: !!game?.quiz_id,
+  });
+
+  const updateGameMutation = useMutation({
+    mutationFn: async ({ gameId, data }) => {
+      return await base44.entities.Game.update(gameId, data);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['game', gameId] });
+    },
+  });
+
+  const handleQuestionClick = (categoryIndex, questionIndex) => {
+    const questionKey = `${categoryIndex}-${questionIndex}`;
+    if (game.answered_questions.includes(questionKey)) return;
+
+    const category = quiz.categories[categoryIndex];
+    const question = category?.questions?.[questionIndex];
+    
+    if (!question) {
+      console.error('Question not found');
+      return;
+    }
+
+    setSelectedQuestion({
+      ...question,
+      categoryIndex,
+      questionIndex,
+      categoryName: category.name,
+    });
+    setShowAnswer(false);
+  };
+
+  const handleCloseQuestion = () => {
+    setSelectedQuestion(null);
+    setShowAnswer(false);
+  };
+
+  const handleCorrectAnswer = async (teamIndex) => {
+    if (!selectedQuestion) return;
+
+    const newTeams = [...game.teams];
+    newTeams[teamIndex].score += selectedQuestion.points;
+
+    const questionKey = `${selectedQuestion.categoryIndex}-${selectedQuestion.questionIndex}`;
+    const newAnsweredQuestions = [...game.answered_questions, questionKey];
+
+    await updateGameMutation.mutateAsync({
+      gameId: game.id,
+      data: {
+        teams: newTeams,
+        answered_questions: newAnsweredQuestions,
+      }
+    });
+
+    handleCloseQuestion();
+  };
+
+  const handleWrongAnswer = async (teamIndex) => {
+    if (!selectedQuestion) return;
+
+    const newTeams = [...game.teams];
+    newTeams[teamIndex].score -= selectedQuestion.points;
+
+    await updateGameMutation.mutateAsync({
+      gameId: game.id,
+      data: {
+        teams: newTeams,
+      }
+    });
+  };
+
+  const handleSkipQuestion = async () => {
+    if (!selectedQuestion) return;
+
+    const questionKey = `${selectedQuestion.categoryIndex}-${selectedQuestion.questionIndex}`;
+    const newAnsweredQuestions = [...game.answered_questions, questionKey];
+
+    await updateGameMutation.mutateAsync({
+      gameId: game.id,
+      data: {
+        answered_questions: newAnsweredQuestions,
+      }
+    });
+
+    handleCloseQuestion();
+  };
+
+  const handleEndGame = async () => {
+    await updateGameMutation.mutateAsync({
+      gameId: game.id,
+      data: {
+        status: "finished"
+      }
+    });
+    navigate(`${createPageUrl("Leaderboard")}?game_id=${game.id}`);
+  };
+
+  if (isLoading || !game || !quiz) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-slate-900 via-blue-900 to-slate-900 flex items-center justify-center">
+        <div className="text-white text-xl">Loading game...</div>
+      </div>
+    );
+  }
+
+  // Safety check for quiz categories
+  if (!quiz.categories || quiz.categories.length === 0) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-slate-900 via-blue-900 to-slate-900 flex items-center justify-center">
+        <div className="text-center text-white">
+          <h2 className="text-2xl mb-4">Quiz data tidak lengkap</h2>
+          <p className="text-slate-400 mb-6">Mohon buat quiz baru dengan AI generator</p>
+          <button
+            onClick={() => navigate(createPageUrl("Home"))}
+            className="bg-blue-600 hover:bg-blue-700 px-6 py-3 rounded-lg"
+          >
+            Kembali ke Home
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="h-screen bg-gradient-to-br from-slate-900 via-blue-900 to-slate-900 overflow-hidden flex flex-col p-2 md:p-4">
+      <div className="max-w-[1920px] mx-auto w-full flex flex-col h-full space-y-2 md:space-y-3">
+        <div className="flex-shrink-0">
+          <Scoreboard teams={game.teams} />
+        </div>
+        
+        <div className="flex-1 min-h-0">
+          <JeopardyBoard
+            categories={quiz.categories}
+            answeredQuestions={game.answered_questions}
+            onQuestionClick={handleQuestionClick}
+          />
+        </div>
+
+        <div className="flex-shrink-0">
+          <GameControls onEndGame={handleEndGame} />
+        </div>
+
+        <QuestionModal
+          question={selectedQuestion}
+          isOpen={!!selectedQuestion}
+          onClose={handleCloseQuestion}
+          showAnswer={showAnswer}
+          onShowAnswer={() => setShowAnswer(true)}
+          teams={game.teams}
+          onCorrectAnswer={handleCorrectAnswer}
+          onWrongAnswer={handleWrongAnswer}
+          onSkip={handleSkipQuestion}
+        />
+      </div>
+    </div>
+  );
+}
